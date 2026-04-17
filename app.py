@@ -1,53 +1,30 @@
 import streamlit as st
 import pandas as pd
-import requests
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-st.set_page_config(page_title="Prueba Z", layout="centered")
+st.sidebar.title("Menú de Navegación")
+opcion = st.sidebar.selectbox("Ir a:", ["Carga de Datos", "Visualización", "Prueba Z", "Asistente IA"])
 
-st.title("📊 Prueba Z - Test de API")
+# Inicializamos el dataframe en la sesión para que no se borre al cambiar de menú
+if 'df' not in st.session_state:
+    st.session_state.df = None
 
-st.write("Ingresa los datos para probar tu API de prueba Z")
+if opcion == "Carga de Datos":
+    st.header("1. Carga de información")
+    archivo = st.file_uploader("Sube tu archivo CSV", type=["csv"])
+    if archivo:
+        st.session_state.df = pd.read_csv(archivo)
+        st.success("¡Archivo cargado con éxito!")
+        st.write(st.session_state.df.head())
 
-# Inputs
-data_input = st.text_input("Datos (separados por coma)", "10,12,9,11,10,13")
-mu = st.number_input("Media poblacional (mu)", value=10.0)
-sigma = st.number_input("Desviación estándar (sigma)", value=2.0)
-alpha = st.number_input("Nivel de significancia (alpha)", value=0.05)
-tipo = st.selectbox("Tipo de prueba", ["bilateral", "izquierda", "derecha"])
-
-# Convertir datos
-try:
-    data = [float(x) for x in data_input.split(",")]
-    df = pd.DataFrame(data, columns=["valores"])
-
-    st.write("📊 Datos:")
-    st.dataframe(df)
-
-except:
-    st.error("❌ Error en los datos. Usa solo números separados por coma.")
-    st.stop()
-
-# Botón para llamar API
-if st.button("🚀 Enviar a API"):
-
-    payload = {
-        "data": data,
-        "mu": mu,
-        "sigma": sigma,
-        "alpha": alpha,
-        "tipo": tipo
-    }
-
-    st.write("📡 Enviando:")
-    st.json(payload)
-
-    try:
-        url = "http://127.0.0.1:3000/prueba-z"  # cambia si tu endpoint es otro
-        response = requests.post(url, json=payload)
-
-        st.success("✅ Respuesta de la API:")
-        st.json(response.json())
-
-    except Exception as e:
-        st.error("❌ No se pudo conectar a la API")
-        st.write(e)
+elif opcion == "Visualización":
+    st.header("2. Análisis Gráfico")
+    if st.session_state.df is not None:
+        columna = st.selectbox("Selecciona la columna a graficar", st.session_state.df.columns)
+        fig, ax = plt.subplots()
+        sns.histplot(st.session_state.df[columna], kde=True, ax=ax)
+        st.pyplot(fig)
+    else:
+        st.warning("Primero carga un archivo en el menú 'Carga de Datos'")
