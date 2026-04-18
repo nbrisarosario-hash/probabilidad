@@ -4,132 +4,168 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
+import streamlit as st
+import google.generativeai as genai
 
-st.set_page_config(page_title="App Estadística Prueba Z", layout="wide")
+API_KEY = st.secrets["API_KEY"]
+genai.configure(api_key=API_KEY)
 
+# 1. At the beginning of your code:
+model = genai.GenerativeModel('gemini-2.5-flash')
+
+# 2. Inside the 'analizar_resultado_z' function:
+def analizar_resultado_z(media_m, media_h, n, sigma, alpha, tipo_prueba, z_stat, p_value):
+    model_ia = genai.GenerativeModel('gemini-2.5-flash')  # <--- Changed here
+    # ... rest of the code remains the same
+
+
+    prompt = f"""
+    Se realizó una prueba Z con los siguientes parámetros:
+    - Media muestral = {media_m}, Media hipotética = {media_h}
+    - n = {n}, sigma = {sigma}, alpha = {alpha}
+    - Tipo de prueba = {tipo_prueba}
+    - El estadístico Z fue = {z_stat}
+    - El p-value fue = {p_value}
+
+    ¿Se rechaza H0? Explica la decisión y si los supuestos de la prueba son razonables.
+    """
+
+    try:
+        # IMPORTANTE: No uses "models/" antes del nombre si usas la versión más reciente
+        response = model_ia.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        # Esto te dirá exactamente qué está pasando si falla
+        return f"Error detallado: {str(e)}"
+
+
+
+# --- SIDEBAR ---
 st.sidebar.title("Menú de Navegación")
-opcion = st.sidebar.selectbox("Selecciona un Módulo", 
-    ["Carga de Datos", "Visualización", "Prueba Z", "Asistente IA"])
+opcion = st.sidebar.selectbox(
+    "Selecciona un Módulo",
+    ["Carga de Datos", "Visualización", "Prueba Z", "Asistente IA"]
+)
 
-# --- PERSISTENCIA DE DATOS ---
+# --- PERSISTENCIA ---
 if 'df' not in st.session_state:
     st.session_state.df = None
 
-# --- MÓDULO 1: CARGA DE DATOS ---
+# --- MÓDULO 1 ---
 if opcion == "Carga de Datos":
     st.header("Carga o Generación de Datos")
-    metodo = st.radio("¿Cómo quieres ingresar los datos?", ["Subir CSV", "Generar Datos Sintéticos"])
-    
+
+    metodo = st.radio(
+        "¿Cómo quieres ingresar los datos?",
+        ["Subir CSV", "Generar Datos Sintéticos"]
+    )
+
     if metodo == "Subir CSV":
         archivo = st.file_uploader("Sube tu archivo CSV", type=["csv"])
         if archivo:
             st.session_state.df = pd.read_csv(archivo)
             st.success("¡Archivo cargado!")
     else:
-        st.info("Genera datos normales para probar la app")
         n_sintetico = st.number_input("Tamaño de muestra (n)", min_value=30, value=100)
         media_sintetica = st.number_input("Media deseada", value=50.0)
         desv_sintetica = st.number_input("Desviación estándar", value=5.0)
+
         if st.button("Generar Datos"):
             datos = np.random.normal(media_sintetica, desv_sintetica, n_sintetico)
             st.session_state.df = pd.DataFrame(datos, columns=["Valores_Generados"])
             st.success("Datos generados correctamente")
 
     if st.session_state.df is not None:
-        st.write("Vista previa de los datos:", st.session_state.df.head())
+        st.write(st.session_state.df.head())
 
-# --- MÓDULO 2: VISUALIZACIÓN ---
+# --- MÓDULO 2 ---
 elif opcion == "Visualización":
-    st.header("Visualización de Distribuciones")
-    if st.session_state.df is not None:
-        # Filtramos solo columnas numéricas para evitar el error de tu imagen
-        cols_numericas = st.session_state.df.select_dtypes(include=[np.number]).columns.tolist()
-        
-        if not cols_numericas:
-            st.error("No hay columnas numéricas en tus datos.")
-        else:
-            columna = st.selectbox("Selecciona variable", cols_numericas)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("Histograma y KDE")
-                fig, ax = plt.subplots()
-                sns.histplot(st.session_state.df[columna], kde=True, ax=ax, color="skyblue")
-                st.pyplot(fig)
-            
-            with col2:
-                st.subheader("Boxplot")
-                fig, ax = plt.subplots()
-                sns.boxplot(x=st.session_state.df[columna], ax=ax, color="lightcoral")
-                st.pyplot(fig)
+    st.header("Visualización")
 
-            # --- RESPUESTAS DENTRO DE LA APP (Criterio académico) ---
-            st.divider()
-            st.subheader("Análisis de la Distribución")
+    if st.session_state.df is not None:
+        cols = st.session_state.df.select_dtypes(include=[np.number]).columns.tolist()
+
+        if cols:
+            columna = st.selectbox("Selecciona variable", cols)
+
+            fig, ax = plt.subplots()
+            sns.histplot(st.session_state.df[columna], kde=True, ax=ax)
+            st.pyplot(fig)
+
             sesgo = st.session_state.df[columna].skew()
-            st.write(f"**Sesgo:** {sesgo:.4f}")
-            if abs(sesgo) < 0.5:
-                st.write("- La distribución parece **Simétrica (Normal)**.")
-            else:
-                st.write(f"- Existe un **Sesgo {'Positivo' if sesgo > 0 else 'Negativo'}**.")
+            st.write(f"Sesgo: {sesgo:.4f}")
+        else:
+            st.error("No hay columnas numéricas.")
     else:
         st.warning("Carga datos primero.")
 
-# --- MÓDULO 3: PRUEBA Z ---
+# --- MÓDULO 3 ---
 elif opcion == "Prueba Z":
-    st.header("Ejecución de Prueba Z")
+    st.header("Prueba Z")
+
     if st.session_state.df is not None:
-        cols_numericas = st.session_state.df.select_dtypes(include=[np.number]).columns.tolist()
-        columna = st.selectbox("Variable para la prueba", cols_numericas)
+        cols = st.session_state.df.select_dtypes(include=[np.number]).columns.tolist()
+        columna = st.selectbox("Variable", cols)
+
         datos = st.session_state.df[columna].dropna()
-        
-        mu_h0 = st.number_input("Hipótesis Nula (μ H0)", value=0.0)
-        sigma = st.number_input("Varianza poblacional (σ conocida)", value=1.0, min_value=0.01)
-        tipo = st.selectbox("Tipo de Prueba (H1)", ["Bilateral", "Cola Izquierda", "Cola Derecha"])
-        alpha = st.slider("Significancia (α)", 0.01, 0.10, 0.05, step=0.01)
-        
+
+        mu_h0 = st.number_input("μ H0", value=0.0)
+        sigma = st.number_input("σ conocida", value=1.0, min_value=0.01)
+        tipo = st.selectbox("Tipo", ["Bilateral", "Cola Izquierda", "Cola Derecha"])
+        alpha = st.slider("α", 0.01, 0.10, 0.05)
+
         if st.button("Calcular"):
             x_bar = datos.mean()
             n = len(datos)
+
             z_stat = (x_bar - mu_h0) / (sigma / np.sqrt(n))
-            
-            # P-value según tipo
+
             if tipo == "Bilateral":
                 p_val = 2 * (1 - stats.norm.cdf(abs(z_stat)))
             elif tipo == "Cola Izquierda":
                 p_val = stats.norm.cdf(z_stat)
             else:
                 p_val = 1 - stats.norm.cdf(z_stat)
-            
-            st.metric("Estadístico Z", f"{z_stat:.4f}")
-            st.metric("P-Value", f"{p_val:.4f}")
 
-            # GRAFICA DE REGIÓN CRÍTICA
-            x = np.linspace(-4, 4, 1000)
-            y = stats.norm.pdf(x, 0, 1)
-            fig, ax = plt.subplots()
-            ax.plot(x, y, label='Normal Estándar')
-            ax.axvline(z_stat, color='red', linestyle='--', label=f'Z={z_stat:.2f}')
-            
-            # Sombrear región de rechazo (Bilateral ejemplo)
-            z_crit = stats.norm.ppf(1 - alpha/2)
-            ax.fill_between(x, 0, y, where=(abs(x) > z_crit), color='red', alpha=0.3, label='Región Rechazo')
-            st.pyplot(fig)
+            st.metric("Z", f"{z_stat:.4f}")
+            st.metric("p-value", f"{p_val:.4f}")
 
             if p_val < alpha:
-                st.error("Resultado: RECHAZAR H0")
+                st.error("RECHAZAR H0")
             else:
-                st.success("Resultado: NO RECHAZAR H0")
-                
-            # Guardamos resultados para la IA
-            st.session_state.resumen_z = f"Z={z_stat}, p={p_val}, n={n}, media={x_bar}, H0={mu_h0}, alpha={alpha}"
+                st.success("NO RECHAZAR H0")
 
-# --- MÓDULO 4: ASISTENTE IA ---
+            # GUARDAMOS DATOS BIEN (no string)
+            st.session_state.resultado_z = {
+                "media_m": x_bar,
+                "media_h": mu_h0,
+                "n": n,
+                "sigma": sigma,
+                "alpha": alpha,
+                "tipo": tipo,
+                "z": z_stat,
+                "p": p_val
+            }
+
+# --- MÓDULO 4 ---
 elif opcion == "Asistente IA":
-    st.header("Interpretación con Gemini")
-    st.write("Copia el resumen de la Prueba Z y pregúntale a la IA.")
-    if 'resumen_z' in st.session_state:
-        st.code(st.session_state.resumen_z)
-        st.info("Próximo paso: Configurar API Key para enviar este texto automáticamente.")
+    st.header("Asistente IA")
+
+    if "resultado_z" in st.session_state:
+        datos = st.session_state.resultado_z
+        st.write(datos)
+
+        if st.button("Analizar con IA"):
+            respuesta = analizar_resultado_z(
+                datos["media_m"],
+                datos["media_h"],
+                datos["n"],
+                datos["sigma"],
+                datos["alpha"],
+                datos["tipo"],
+                datos["z"],
+                datos["p"]
+            )
+            st.write(respuesta)
     else:
-        st.warning("Primero ejecuta una Prueba Z.")
+        st.warning("Primero ejecuta la Prueba Z.")
